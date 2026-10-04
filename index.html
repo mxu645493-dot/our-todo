@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="我们俩的待办">
+<meta name="theme-color" content="#f5f7fb">
+<title>我们俩的待办</title>
+<link rel="apple-touch-icon" id="touch-icon" href="">
+<style>
+:root{--bg:#f5f7fb;--surface:#fff;--text:#1e2b44;--muted:#748096;--line:#e5eaf2;--blue:#2454ce;--pale:#edf3ff;--green:#277761;--red:#b34343}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:640px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;gap:12px;margin:8px 0 18px}
+header img{width:44px;height:44px;border-radius:12px}
+header h1{font-size:1.35rem;margin:0}
+header p{margin:3px 0 0;font-size:.8rem;color:var(--muted)}
+header .spacer{flex:1}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+.panel+.panel{margin-top:16px}
+h2{font-size:1rem;margin:0}
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.muted{color:var(--muted);font-size:.8rem}
+progress{appearance:none;-webkit-appearance:none;width:100%;height:6px;border:0;border-radius:6px;background:#edf1f7;overflow:hidden;display:block;margin-bottom:14px}
+progress::-webkit-progress-bar{background:#edf1f7}
+progress::-webkit-progress-value{background:#547ad6;border-radius:6px}
+form.add{display:flex;gap:8px;margin-bottom:6px}
+input{font:inherit;font-size:16px;border:1px solid #dce3ed;border-radius:10px;padding:12px;background:#fff;color:var(--text);min-width:0}
+form.add input{flex:1}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transparent;padding:11px 16px;font-size:.9rem;font-weight:600}
+.primary{background:var(--blue);color:#fff}
+.secondary{background:#fff;border-color:var(--line);color:var(--text)}
+.link{background:none;border:0;color:var(--blue);padding:6px 4px;font-weight:500}
+.link.danger{color:var(--red)}
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f0f3f7}
+.row:last-child{border-bottom:0}
+.row input[type=checkbox]{width:24px;height:24px;margin:0;flex-shrink:0;accent-color:var(--green)}
+.text{flex:1;min-width:0}
+.title{font-size:1rem;line-height:1.5;overflow-wrap:anywhere}
+.meta{font-size:.75rem;color:var(--muted);margin-top:2px}
+.row.done .title{text-decoration:line-through;color:var(--muted)}
+.actions{display:flex;flex-shrink:0}
+.edit{flex:1}
+.empty{color:var(--muted);font-size:.9rem;padding:14px 0 4px}
+.login label{display:block;font-size:.85rem;color:#53647a;margin:12px 0 6px}
+.login input{width:100%}
+.login button{width:100%;margin-top:18px}
+.error{color:var(--red);font-size:.85rem;margin-top:10px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1e2b44;color:#fff;padding:10px 16px;border-radius:10px;font-size:.85rem}
+.sync{font-size:.72rem;color:var(--muted);text-align:center;margin-top:14px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+ <header><img id="logo" alt=""><div><h1>我们俩的待办</h1><p>所爱隔山海，山海亦可平</p></div><span class="spacer"></span><button class="link" id="logout" hidden>退出</button></header>
+ <section class="panel login" id="login" hidden>
+  <h2>登录</h2>
+  <p class="muted">用你们各自的邮箱和密码登录。账号由小熊在后台建好。</p>
+  <form id="login-form">
+   <label for="email">邮箱</label><input id="email" type="email" autocomplete="username" required>
+   <label for="password">密码</label><input id="password" type="password" autocomplete="current-password" required>
+   <button class="primary" type="submit">登录</button>
+   <p class="error" id="login-error" hidden></p>
+  </form>
+ </section>
+ <section id="app" hidden>
+  <div class="panel">
+   <div class="head"><h2>还没做的</h2><span class="muted" id="count"></span></div>
+   <progress id="bar" max="1" value="0"></progress>
+   <form class="add" id="add-form"><input id="new" maxlength="200" placeholder="写一件要一起做的事，按回车" aria-label="新的共同待办"><button class="primary" type="submit">添加</button></form>
+   <div id="open-list"></div>
+  </div>
+  <div class="panel">
+   <div class="head"><h2>做完了</h2><button class="link" id="toggle-done"></button></div>
+   <div id="done-list"></div>
+  </div>
+  <p class="sync" id="sync"></p>
+ </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script>
+'use strict';
+const URL_BASE='https://cnupmfuxomfrmhbqojcf.supabase.co';
+const KEY='sb_publishable_err7Esvh43jYx7nlrPy1Gg_qSy4i-EV';
+const STORE='our-todo.session';
+const $=s=>document.querySelector(s);
+let session=null,todos=[],lastJson='',showAllDone=false,editingId=null,busy=false,toastTimer;
+function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;}
+function toast(t){clearTimeout(toastTimer);$('#toast').textContent=t;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,3000);}
+function load(){try{return JSON.parse(localStorage.getItem(STORE));}catch(_){return null;}}
+function store(s){session=s;try{s?localStorage.setItem(STORE,JSON.stringify(s)):localStorage.removeItem(STORE);}catch(_){}}
+async function auth(path,body){
+ const r=await fetch(URL_BASE+'/auth/v1/'+path,{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(d.error_description||d.msg||d.message||'登录失败，请检查邮箱和密码。');
+ return {access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Math.floor(Date.now()/1000)+(d.expires_in||3600),email:(d.user&&d.user.email||'').toLowerCase()};
+}
+async function token(){
+ if(!session)throw new Error('请先登录。');
+ if(session.expires_at-60<Date.now()/1000){
+  try{store(await auth('token?grant_type=refresh_token',{refresh_token:session.refresh_token}));}
+  catch(e){store(null);show();throw new Error('登录已过期，请重新登录。');}
+ }
+ return session.access_token;
+}
+async function api(method,query,body){
+ const r=await fetch(URL_BASE+'/rest/v1/shared_todos'+query,{method,headers:{apikey:KEY,Authorization:'Bearer '+await token(),'Content-Type':'application/json',Prefer:'return=representation'},body:body?JSON.stringify(body):undefined});
+ if(r.status===401){store(null);show();throw new Error('登录已过期，请重新登录。');}
+ const d=await r.json().catch(()=>null);
+ if(!r.ok)throw new Error((d&&d.message)||'没有保存成功，请检查网络后再试。');
+ return d;
+}
+function who(email){return !email?'':email===session.email?'我':'TA';}
+function day(ts){if(!ts)return '';const d=new Date(ts);const t=new Date();const y=new Date(Date.now()-864e5);const k=x=>x.toDateString();return k(d)===k(t)?'今天':k(d)===k(y)?'昨天':(d.getMonth()+1)+'月'+d.getDate()+'日';}
+async function refresh(){
+ try{const data=await api('GET','?select=*&order=created_at.asc');const json=JSON.stringify(data);if(json!==lastJson){lastJson=json;todos=data;render();}$('#sync').textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
+ catch(e){$('#sync').textContent=e.message;}
+}
+async function act(fn,msg){if(busy)return;busy=true;try{await fn();await refresh();if(msg)toast(msg);}catch(e){toast(e.message);await refresh();}finally{busy=false;}}
+function row(t){
+ const r=el('div','row'+(t.done?' done':''));
+ const c=el('input');c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成：'+t.title);
+ c.addEventListener('change',()=>act(()=>api('PATCH','?id=eq.'+t.id,{done:c.checked}),c.checked?'做完了！':'改回没做完'));
+ r.append(c);
+ if(editingId===t.id){
+  const i=el('input','edit');i.value=t.title;i.maxLength=200;
+  const save=()=>{const v=i.value.trim();if(!v)return toast('内容不能为空');editingId=null;act(()=>api('PATCH','?id=eq.'+t.id,{title:v}),'已修改');};
+  i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save();}if(e.key==='Escape'){editingId=null;render();}});
+  const ok=el('button','link','保存');ok.type='button';ok.onclick=save;const no=el('button','link','取消');no.type='button';no.onclick=()=>{editingId=null;render();};
+  r.append(i,ok,no);setTimeout(()=>i.focus(),0);return r;
+ }
+ const x=el('div','text');x.append(el('div','title',t.title));
+ x.append(el('div','meta',t.done?who(t.done_by)+'在'+day(t.done_at)+'完成':who(t.created_by)+'加的 · '+day(t.created_at)));
+ r.append(x);
+ const a=el('div','actions');
+ const e=el('button','link','改');e.type='button';e.onclick=()=>{editingId=t.id;render();};
+ const d=el('button','link danger','删');d.type='button';d.onclick=()=>{if(confirm('删除「'+t.title+'」？'))act(()=>api('DELETE','?id=eq.'+t.id),'已删除');};
+ a.append(e,d);r.append(a);return r;
+}
+function render(){
+ const open=todos.filter(t=>!t.done),done=todos.filter(t=>t.done).sort((a,b)=>(b.done_at||'').localeCompare(a.done_at||''));
+ const week=Date.now()-7*864e5,recent=done.filter(t=>new Date(t.done_at).getTime()>=week),shown=showAllDone?done:recent;
+ $('#count').textContent=todos.length?'已完成 '+done.length+' / '+todos.length:'';
+ $('#bar').max=todos.length||1;$('#bar').value=done.length;
+ $('#open-list').replaceChildren(...(open.length?open.map(row):[el('p','empty','都做完啦，写下一件要一起做的事吧。')]));
+ $('#done-list').replaceChildren(...(shown.length?shown.map(row):[el('p','empty',done.length?'最近 7 天没有完成的事。':'还没有做完的事。')]));
+ $('#toggle-done').textContent=done.length>recent.length?(showAllDone?'只看最近 7 天':'显示全部 '+done.length+' 项'):'';
+}
+function show(){
+ const ok=!!session;$('#login').hidden=ok;$('#app').hidden=!ok;$('#logout').hidden=!ok;
+ if(ok){lastJson='';refresh();}
+}
+$('#login-form').addEventListener('submit',async e=>{
+ e.preventDefault();$('#login-error').hidden=true;
+ try{store(await auth('token?grant_type=password',{email:$('#email').value.trim(),password:$('#password').value}));$('#password').value='';show();}
+ catch(err){$('#login-error').textContent=/invalid/i.test(err.message)?'邮箱或密码不对，请再试一次。':err.message;$('#login-error').hidden=false;}
+});
+$('#add-form').addEventListener('submit',e=>{
+ e.preventDefault();const v=$('#new').value.trim();if(!v)return;
+ act(async()=>{await api('POST','',{title:v});$('#new').value='';},'已添加').then(()=>$('#new').focus());
+});
+$('#toggle-done').addEventListener('click',()=>{showAllDone=!showAllDone;render();});
+$('#logout').addEventListener('click',()=>{if(confirm('退出登录？'))fetch(URL_BASE+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+(session&&session.access_token)}}).catch(()=>{}).finally(()=>{store(null);todos=[];show();});});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&session&&!editingId)refresh();});
+setInterval(()=>{if(document.visibilityState==='visible'&&session&&!editingId&&!busy&&document.activeElement!==$('#new'))refresh();},15000);
+const BEAR='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="15" cy="17" r="10" fill="#b0784a"/><circle cx="49" cy="17" r="10" fill="#b0784a"/><circle cx="15" cy="17" r="5" fill="#f0cfa8"/><circle cx="49" cy="17" r="5" fill="#f0cfa8"/><circle cx="32" cy="36" r="23" fill="#c68c5c"/><ellipse cx="32" cy="44" rx="11" ry="8.5" fill="#f5dcbf"/><circle cx="22.5" cy="32" r="3.2" fill="#3a2a20"/><circle cx="41.5" cy="32" r="3.2" fill="#3a2a20"/><circle cx="23.6" cy="30.9" r="1" fill="#fff"/><circle cx="42.6" cy="30.9" r="1" fill="#fff"/><ellipse cx="32" cy="40.5" rx="4.2" ry="3" fill="#3a2a20"/><path d="M32 43.5v2.5M28 47.2q4 3 8 0" stroke="#3a2a20" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="17" cy="42" r="3.6" fill="#f09a9a" opacity=".55"/><circle cx="47" cy="42" r="3.6" fill="#f09a9a" opacity=".55"/></svg>';
+(function(){const svgUrl='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(BEAR);$('#logo').src=svgUrl;
+ const img=new Image();img.onload=function(){const c=document.createElement('canvas');c.width=c.height=180;const g=c.getContext('2d');g.fillStyle='#fdf6ee';g.fillRect(0,0,180,180);g.drawImage(img,14,14,152,152);const png=c.toDataURL('image/png');$('#touch-icon').href=png;const fav=document.createElement('link');fav.rel='icon';fav.href=png;document.head.append(fav);};img.src=svgUrl;})();
+session=load();show();
+</script>
+</body>
+</html>
