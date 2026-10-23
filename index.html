@@ -62,6 +62,15 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
 .detail-title h2{font-size:1.25rem;overflow-wrap:anywhere}
 .detail-title.done h2{text-decoration:line-through;color:var(--muted)}
 .hint{font-size:.8rem;color:var(--muted);margin:2px 0 14px}
+.group{border-bottom:1px solid #f0f3f7}
+.group .group-head{border-bottom:0}
+.group.all .group-head .title{text-decoration:line-through;color:var(--muted)}
+.group-list{margin:0 0 12px 36px;padding:2px 12px 8px;background:#fffaf4;border:1px solid #f1e6d8;border-radius:12px}
+.row.sub{padding:9px 0}
+.row.sub input[type=checkbox]{width:20px;height:20px}
+.sub-add{margin-top:8px}
+.sub-add input{padding:9px 10px;font-size:16px}
+.sub-add button{padding:9px 14px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -83,7 +92,7 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
    <div class="head"><h2>还没做的</h2><span class="muted" id="count"></span></div>
    <progress id="bar" max="1" value="0"></progress>
    <form class="add" id="add-form"><input id="new" maxlength="200" placeholder="写一件要一起做的事，按回车" aria-label="新的共同待办"><button class="primary" type="submit">添加</button></form>
-   <p class="hint">点一件事，可以在里面加小清单，比如这道菜要买的东西。</p>
+   <p class="hint">点一件事（比如一个超市）进去，可以分品类（比如一道菜），再列出每样要买的东西。</p>
    <div id="open-list"></div>
   </div>
   <div class="panel">
@@ -96,9 +105,9 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
   <div class="panel">
    <div class="detail-title" id="detail-title"><input type="checkbox" id="detail-done" aria-label="整件事完成"><h2 id="detail-name"></h2></div>
    <p class="meta" id="detail-meta"></p>
-   <div class="head" style="margin-top:14px"><h2>小清单</h2><span class="muted" id="item-count"></span></div>
+   <div class="head" style="margin-top:14px"><h2>要买的</h2><span class="muted" id="item-count"></span></div>
    <progress id="item-bar" max="1" value="0"></progress>
-   <form class="add" id="item-form"><input id="item-new" maxlength="200" placeholder="加一样，比如：五花肉 500g" aria-label="新的清单项"><button class="primary" type="submit">添加</button></form>
+   <form class="add" id="item-form"><input id="item-new" maxlength="200" placeholder="加一个品类（比如：红烧肉），或直接加一样东西" aria-label="新的品类或东西"><button class="primary" type="submit">添加</button></form>
    <div id="item-list"></div>
   </div>
  </section>
@@ -140,7 +149,7 @@ async function api(method,table,query,body){
 const T='shared_todos',I='shared_todo_items';
 function who(email){return !email?'':email===session.email?'我':'TA';}
 function day(ts){if(!ts)return '';const d=new Date(ts);const t=new Date();const y=new Date(Date.now()-864e5);const k=x=>x.toDateString();return k(d)===k(t)?'今天':k(d)===k(y)?'昨天':(d.getMonth()+1)+'月'+d.getDate()+'日';}
-function itemsOf(t){return (t.shared_todo_items||[]).slice().sort((a,b)=>(a.done-b.done)||a.created_at.localeCompare(b.created_at));}
+function itemsOf(t){const all=t.shared_todo_items||[];return all.filter(x=>!all.some(y=>y.parent_id===x.id));}
 async function refresh(){
  try{const data=await api('GET',T,'?select=*,shared_todo_items(*)&order=created_at.asc');const json=JSON.stringify(data);if(json!==lastJson){lastJson=json;todos=data;render();}$('#sync').textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
  catch(e){$('#sync').textContent=e.message;}
@@ -173,22 +182,50 @@ function row(t){
  const g=el('span','arrow','›');g.addEventListener('click',()=>openDetail(t.id));
  a.append(e,d,g);r.append(a);return r;
 }
-function itemRow(it){
- const r=el('div','row'+(it.done?' done':''));
+const openGroups=new Set(),groupDrafts={};
+function kids(t,pid){return (t.shared_todo_items||[]).filter(x=>(x.parent_id||null)===pid).sort((a,b)=>(a.done-b.done)||a.created_at.localeCompare(b.created_at));}
+function leaves(t){const all=t.shared_todo_items||[];return all.filter(x=>!all.some(y=>y.parent_id===x.id));}
+function delBtn(it,label){const d=el('button','link danger','删');d.type='button';d.onclick=()=>{if(!label||confirm(label))act(()=>api('DELETE',I,'?id=eq.'+it.id),'已删除');};return d;}
+function itemRow(it,small){
+ const r=el('div','row'+(it.done?' done':'')+(small?' sub':''));
  const c=el('input');c.type='checkbox';c.checked=it.done;c.setAttribute('aria-label','买到了：'+it.title);
  c.addEventListener('change',()=>act(()=>api('PATCH',I,'?id=eq.'+it.id,{done:c.checked}),c.checked?'勾上了':'改回没买'));
  const x=el('div','text');x.append(el('div','title',it.title),el('div','meta',it.done?who(it.done_by)+'在'+day(it.done_at)+'勾的':who(it.created_by)+'加的'));
- const d=el('button','link danger','删');d.type='button';d.onclick=()=>act(()=>api('DELETE',I,'?id=eq.'+it.id),'已删除');
- r.append(c,x,d);return r;
+ r.append(c,x);
+ const a=el('div','actions');
+ if(!small){const g=el('button','link','＋');g.type='button';g.title='在「'+it.title+'」下面再分几样';g.onclick=()=>{openGroups.add(it.id);render();setTimeout(()=>{const f=document.querySelector('[data-group="'+it.id+'"] input');if(f)f.focus();},0);};a.append(g);}
+ a.append(delBtn(it));r.append(a);return r;
+}
+function groupBlock(t,g){
+ const children=kids(t,g.id),got=children.filter(x=>x.done).length,all=children.length&&got===children.length;
+ const open=openGroups.has(g.id);
+ if(!children.length&&!open)return itemRow(g,false);
+ const box=el('div','group'+(all?' all':''));
+ const h=el('div','row group-head');
+ const c=el('input');c.type='checkbox';c.checked=all;c.setAttribute('aria-label','整组买齐：'+g.title);
+ c.addEventListener('change',()=>{const v=c.checked;act(async()=>{if(children.length)await api('PATCH',I,'?parent_id=eq.'+g.id,{done:v});await api('PATCH',I,'?id=eq.'+g.id,{done:v});},v?'这一组都买齐了':'改回没买齐');});
+ const x=el('div','text open-detail');x.append(el('div','title',g.title));const m=el('div','meta');m.append(el('span','chip'+(all?' all':''),'🛒 '+got+'/'+children.length));m.append(open?'点这里收起':'点这里展开');x.append(m);
+ x.addEventListener('click',()=>{open?openGroups.delete(g.id):openGroups.add(g.id);render();});
+ const a=el('div','actions');a.append(delBtn(g,'删除「'+g.title+'」？里面的'+children.length+'样也会一起删掉。'),el('span','arrow',open?'⌄':'›'));
+ h.append(c,x,a);box.append(h);
+ if(open){
+  const list=el('div','group-list');children.forEach(it=>list.append(itemRow(it,true)));
+  const f=el('form','add sub-add');f.dataset.group=g.id;const i=el('input');i.maxLength=200;i.placeholder='给「'+g.title+'」加一样，比如：五花肉 500g';i.value=groupDrafts[g.id]||'';i.addEventListener('input',()=>{groupDrafts[g.id]=i.value;});
+  const b=el('button','secondary','加');b.type='submit';f.append(i,b);
+  f.addEventListener('submit',e=>{e.preventDefault();const v=(groupDrafts[g.id]||'').trim();if(!v){i.focus();return;}act(async()=>{await api('POST',I,'',{todo_id:t.id,parent_id:g.id,title:v});groupDrafts[g.id]='';},'已加进「'+g.title+'」').then(()=>{const again=document.querySelector('[data-group="'+g.id+'"] input');if(again)again.focus();});});
+  list.append(f);box.append(list);
+ }
+ return box;
 }
 function renderDetail(t){
  $('#app').hidden=true;$('#detail').hidden=false;
  $('#detail-name').textContent=t.title;$('#detail-title').classList.toggle('done',t.done);$('#detail-done').checked=t.done;
  $('#detail-meta').textContent=t.done?who(t.done_by)+'在'+day(t.done_at)+'完成':who(t.created_by)+'加的 · '+day(t.created_at);
- const items=itemsOf(t),got=items.filter(x=>x.done).length;
- $('#item-count').textContent=items.length?'已勾 '+got+' / '+items.length:'';
- $('#item-bar').max=items.length||1;$('#item-bar').value=got;
- $('#item-list').replaceChildren(...(items.length?items.map(itemRow):[el('p','empty','还没有东西，在上面加一样吧。')]));
+ const lv=leaves(t),got=lv.filter(x=>x.done).length,top=kids(t,null);
+ for(const g of top)if(!groupDrafts.hasOwnProperty('seen'+g.id)){groupDrafts['seen'+g.id]=1;if(kids(t,g.id).some(x=>!x.done))openGroups.add(g.id);}
+ $('#item-count').textContent=lv.length?'已买 '+got+' / '+lv.length:'';
+ $('#item-bar').max=lv.length||1;$('#item-bar').value=got;
+ $('#item-list').replaceChildren(...(top.length?top.map(g=>groupBlock(t,g)):[el('p','empty','还没有东西。先加一个品类（比如一道菜），或者直接加一样要买的东西。')]));
 }
 function render(){
  if(!session)return;
@@ -219,14 +256,14 @@ $('#add-form').addEventListener('submit',e=>{
 });
 $('#item-form').addEventListener('submit',e=>{
  e.preventDefault();const v=$('#item-new').value.trim();if(!v||!openId)return;const id=openId;
- act(async()=>{await api('POST',I,'',{todo_id:id,title:v});$('#item-new').value='';},'已加进清单').then(()=>$('#item-new').focus());
+ act(async()=>{await api('POST',I,'',{todo_id:id,title:v});$('#item-new').value='';},'已添加，点右边 ＋ 可以在它下面再分几样').then(()=>$('#item-new').focus());
 });
 $('#detail-done').addEventListener('change',()=>{const t=todos.find(x=>x.id===openId);if(t)act(()=>api('PATCH',T,'?id=eq.'+t.id,{done:$('#detail-done').checked}),$('#detail-done').checked?'整件事做完了！':'改回没做完');});
 $('#back').addEventListener('click',closeDetail);
 $('#toggle-done').addEventListener('click',()=>{showAllDone=!showAllDone;render();});
 $('#logout').addEventListener('click',()=>{if(confirm('退出登录？'))fetch(URL_BASE+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+(session&&session.access_token)}}).catch(()=>{}).finally(()=>{store(null);todos=[];openId=null;show();});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&session&&!editingId)refresh();});
-setInterval(()=>{const a=document.activeElement;if(document.visibilityState==='visible'&&session&&!editingId&&!busy&&a!==$('#new')&&a!==$('#item-new'))refresh();},15000);
+setInterval(()=>{const a=document.activeElement;const typing=a&&a.tagName==='INPUT'&&a.type!=='checkbox';if(document.visibilityState==='visible'&&session&&!editingId&&!busy&&!typing)refresh();},15000);
 const BEAR='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="15" cy="17" r="10" fill="#b0784a"/><circle cx="49" cy="17" r="10" fill="#b0784a"/><circle cx="15" cy="17" r="5" fill="#f0cfa8"/><circle cx="49" cy="17" r="5" fill="#f0cfa8"/><circle cx="32" cy="36" r="23" fill="#c68c5c"/><ellipse cx="32" cy="44" rx="11" ry="8.5" fill="#f5dcbf"/><circle cx="22.5" cy="32" r="3.2" fill="#3a2a20"/><circle cx="41.5" cy="32" r="3.2" fill="#3a2a20"/><circle cx="23.6" cy="30.9" r="1" fill="#fff"/><circle cx="42.6" cy="30.9" r="1" fill="#fff"/><ellipse cx="32" cy="40.5" rx="4.2" ry="3" fill="#3a2a20"/><path d="M32 43.5v2.5M28 47.2q4 3 8 0" stroke="#3a2a20" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="17" cy="42" r="3.6" fill="#f09a9a" opacity=".55"/><circle cx="47" cy="42" r="3.6" fill="#f09a9a" opacity=".55"/></svg>';
 (function(){const svgUrl='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(BEAR);$('#logo').src=svgUrl;
  const img=new Image();img.onload=function(){const c=document.createElement('canvas');c.width=c.height=180;const g=c.getContext('2d');g.fillStyle='#fdf6ee';g.fillRect(0,0,180,180);g.drawImage(img,14,14,152,152);const png=c.toDataURL('image/png');$('#touch-icon').href=png;const fav=document.createElement('link');fav.rel='icon';fav.href=png;document.head.append(fav);};img.src=svgUrl;})();
