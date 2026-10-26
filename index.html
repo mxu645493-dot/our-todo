@@ -71,12 +71,25 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
 .sub-add{margin-top:8px}
 .sub-add input{padding:9px 10px;font-size:16px}
 .sub-add button{padding:9px 14px}
+.moon-toggle{background:#f6f0fb;color:#6b46b8;border:1px solid #e6dcf5;border-radius:20px;padding:7px 12px;font-size:.85rem;font-weight:600}
+.moon-panel{margin-bottom:16px;border-color:#e6dcf5;background:linear-gradient(180deg,#fbf8fe,#fff 90px)}
+.moon-line{margin:2px 0 6px;font-size:.95rem}
+.moon-next{margin:4px 0 6px;font-size:1.05rem;font-weight:700;color:#6b46b8}
+.moon-meta{margin:2px 0 10px;font-size:.78rem;color:var(--muted)}
+.moon-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+.moon-form input{padding:8px 10px;font-size:16px}
+.moon-label{font-size:.85rem;color:#53647a}
+.moon-btn{background:#6b46b8;color:#fff;padding:9px 14px}
+.moon-history{border-top:1px dashed #e6dcf5;margin-top:10px;padding-top:8px}
+.moon-row{display:flex;justify-content:space-between;align-items:center;font-size:.88rem;padding:4px 0}
+.moon-del{background:none;border:0;color:var(--red);padding:4px 6px;font-weight:500}
 [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <main>
- <header><img id="logo" alt=""><div><h1>我们俩的待办</h1><p>所爱隔山海，山海亦可平</p></div><span class="spacer"></span><button class="link" id="logout" hidden>退出</button></header>
+ <header><img id="logo" alt=""><div><h1>我们俩的待办</h1><p>所爱隔山海，山海亦可平</p></div><span class="spacer"></span><button class="moon-toggle" id="moon-toggle" type="button" hidden aria-expanded="false">🌙 小月亮 <span id="moon-sign">＋</span></button><button class="link" id="logout" hidden>退出</button></header>
+ <section class="panel moon-panel" id="moon" hidden></section>
  <section class="panel login" id="login" hidden>
   <h2>登录</h2>
   <p class="muted">用你们各自的邮箱和密码登录。账号由小熊在后台建好。</p>
@@ -120,6 +133,7 @@ const URL_BASE='https://cnupmfuxomfrmhbqojcf.supabase.co';
 const KEY='sb_publishable_err7Esvh43jYx7nlrPy1Gg_qSy4i-EV';
 const STORE='our-todo.session';
 const $=s=>document.querySelector(s);
+let moonRows=[],moonOpen=false;
 let session=null,todos=[],lastJson='',showAllDone=false,editingId=null,openId=null,busy=false,toastTimer;
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;}
 function toast(t){clearTimeout(toastTimer);$('#toast').textContent=t;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,3000);}
@@ -146,12 +160,52 @@ async function api(method,table,query,body){
  if(!r.ok)throw new Error((d&&d.message)||'没有保存成功，请检查网络后再试。');
  return d;
 }
-const T='shared_todos',I='shared_todo_items';
+// 🌙 小月亮：日期记录与预测。手机网页和工作台共用这段逻辑（没有反引号和反斜杠，方便贴到网页里）。
+function moonDays(a,b){const p=s=>{const x=s.split('-').map(Number);return Date.UTC(x[0],x[1]-1,x[2]);};return Math.round((p(b)-p(a))/864e5);}
+function moonAdd(d,n){const x=d.split('-').map(Number);const t=new Date(Date.UTC(x[0],x[1]-1,x[2]+n));return t.toISOString().slice(0,10);}
+function moonToday(){const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');}
+function moonLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日';}
+function moonStats(rows){
+ const list=rows.slice().sort((a,b)=>a.start_date.localeCompare(b.start_date));
+ const gaps=[];for(let i=1;i<list.length;i++){const g=moonDays(list[i-1].start_date,list[i].start_date);if(g>=15&&g<=60)gaps.push(g);}
+ const recent=gaps.slice(-6),cycle=recent.length?Math.round(recent.reduce((s,g)=>s+g,0)/recent.length):28;
+ const lens=list.filter(r=>r.end_date).map(r=>moonDays(r.start_date,r.end_date)+1).slice(-6),len=lens.length?Math.round(lens.reduce((s,g)=>s+g,0)/lens.length):5;
+ const last=list[list.length-1]||null,today=moonToday();
+ const next=last?moonAdd(last.start_date,cycle):null;
+ return {list,last,cycle,len,basedOn:recent.length,next,nextEnd:next?moonAdd(next,len-1):null,untilNext:next?moonDays(today,next):null,dayOf:last?moonDays(last.start_date,today)+1:null,today};
+}
+function moonPanel(rows,ui){
+ // ui: {el, btn, act, insert(start), update(id,patch), remove(id)}
+ const s=moonStats(rows),el=ui.el,box=el('div','moon-box');
+ if(!s.last){box.append(el('p','moon-line','还没有记录。记下第一次开始的日期，下次就能帮你预测。'));}
+ else{
+  const ongoing=!s.last.end_date&&s.dayOf<=12;
+  box.append(el('p','moon-line','上次开始：'+moonLabel(s.last.start_date)+(s.last.end_date?'，持续 '+(moonDays(s.last.start_date,s.last.end_date)+1)+' 天':ongoing?'，今天是第 '+s.dayOf+' 天':'')));
+  const until=s.untilNext;
+  box.append(el('p','moon-next','下次大约：'+moonLabel(s.next)+' ~ '+moonLabel(s.nextEnd)+(until>0?'（还有 '+until+' 天）':until===0?'（就是今天左右）':'（已经晚了 '+(-until)+' 天）')));
+  box.append(el('p','moon-meta','平均间隔 '+s.cycle+' 天'+(s.basedOn?'（按最近 '+s.basedOn+' 次算）':'（记录还少，先按 28 天估计）')+' · 平均持续 '+s.len+' 天'));
+  if(ongoing){
+   const f=el('form','moon-form');const d=el('input');d.type='date';d.value=s.today;d.min=s.last.start_date;d.setAttribute('aria-label','结束日期');
+   f.append(el('span','moon-label','这次结束：'),d,ui.btn('记录结束',()=>f.requestSubmit(),'moon-btn'));
+   f.addEventListener('submit',e=>{e.preventDefault();if(!d.value)return;ui.act(()=>ui.update(s.last.id,{end_date:d.value}),'记好了');});box.append(f);
+  }
+ }
+ const f=el('form','moon-form');const d=el('input');d.type='date';d.value=s.today;d.setAttribute('aria-label','开始日期');
+ f.append(el('span','moon-label','这次开始：'),d,ui.btn('记录开始',()=>f.requestSubmit(),'moon-btn'));
+ f.addEventListener('submit',e=>{e.preventDefault();if(!d.value)return;if(s.list.some(r=>r.start_date===d.value))return ui.act(async()=>{throw new Error('这一天已经记过了');});ui.act(()=>ui.insert(d.value),'记好了');});box.append(f);
+ if(s.list.length){
+  const h=el('div','moon-history');h.append(el('p','moon-meta','最近的记录'));
+  s.list.slice(-6).reverse().forEach(r=>{const row=el('div','moon-row');row.append(el('span','',moonLabel(r.start_date)+(r.end_date?' – '+moonLabel(r.end_date)+'（'+(moonDays(r.start_date,r.end_date)+1)+' 天）':'')),ui.btn('删',()=>{if(confirm('删除 '+moonLabel(r.start_date)+' 这条记录？'))ui.act(()=>ui.remove(r.id),'已删除');},'moon-del'));h.append(row);});
+  box.append(h);
+ }
+ return box;
+}
+const T='shared_todos',I='shared_todo_items',M='shared_moon';
 function who(email){return !email?'':email===session.email?'我':'TA';}
 function day(ts){if(!ts)return '';const d=new Date(ts);const t=new Date();const y=new Date(Date.now()-864e5);const k=x=>x.toDateString();return k(d)===k(t)?'今天':k(d)===k(y)?'昨天':(d.getMonth()+1)+'月'+d.getDate()+'日';}
 function itemsOf(t){const all=t.shared_todo_items||[];return all.filter(x=>!all.some(y=>y.parent_id===x.id));}
 async function refresh(){
- try{const data=await api('GET',T,'?select=*,shared_todo_items(*)&order=created_at.asc');const json=JSON.stringify(data);if(json!==lastJson){lastJson=json;todos=data;render();}$('#sync').textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
+ try{const data=await api('GET',T,'?select=*,shared_todo_items(*)&order=created_at.asc');let moon=moonRows;try{moon=await api('GET',M,'?select=*&order=start_date.asc');}catch(_){}const json=JSON.stringify([data,moon]);if(json!==lastJson){lastJson=json;todos=data;moonRows=moon;render();}$('#sync').textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
  catch(e){$('#sync').textContent=e.message;}
 }
 async function act(fn,msg){if(busy)return;busy=true;try{await fn();await refresh();if(msg)toast(msg);}catch(e){toast(e.message);await refresh();}finally{busy=false;}}
@@ -227,8 +281,15 @@ function renderDetail(t){
  $('#item-bar').max=lv.length||1;$('#item-bar').value=got;
  $('#item-list').replaceChildren(...(top.length?top.map(g=>groupBlock(t,g)):[el('p','empty','还没有东西。先加一个品类（比如一道菜），或者直接加一样要买的东西。')]));
 }
+function renderMoon(){
+ $('#moon-sign').textContent=moonOpen?'－':'＋';$('#moon-toggle').setAttribute('aria-expanded',String(moonOpen));$('#moon').hidden=!moonOpen;if(!moonOpen)return;
+ const btn=(t,fn,cls)=>{const b=el('button',cls,t);b.type='button';b.addEventListener('click',fn);return b;};
+ const head=el('div','head');head.append(el('h2','','🌙 小月亮'),el('span','muted','只有我们俩能看到'));
+ $('#moon').replaceChildren(head,moonPanel(moonRows,{el,btn,act,insert:d=>api('POST',M,'',{start_date:d}),update:(id,patch)=>api('PATCH',M,'?id=eq.'+id,patch),remove:id=>api('DELETE',M,'?id=eq.'+id)}));
+}
 function render(){
  if(!session)return;
+ renderMoon();
  const current=openId&&todos.find(t=>t.id===openId);
  if(openId&&!current){openId=null;if(location.hash==='#item')history.replaceState(null,'',location.pathname);}
  if(current)return renderDetail(current);
@@ -242,7 +303,7 @@ function render(){
  $('#toggle-done').textContent=done.length>recent.length?(showAllDone?'只看最近 7 天':'显示全部 '+done.length+' 项'):'';
 }
 function show(){
- const ok=!!session;$('#login').hidden=ok;$('#app').hidden=!ok;$('#detail').hidden=true;$('#logout').hidden=!ok;
+ const ok=!!session;$('#login').hidden=ok;$('#app').hidden=!ok;$('#detail').hidden=true;$('#logout').hidden=!ok;$('#moon-toggle').hidden=!ok;if(!ok)$('#moon').hidden=true;
  if(ok){lastJson='';refresh();}
 }
 $('#login-form').addEventListener('submit',async e=>{
@@ -260,6 +321,7 @@ $('#item-form').addEventListener('submit',e=>{
 });
 $('#detail-done').addEventListener('change',()=>{const t=todos.find(x=>x.id===openId);if(t)act(()=>api('PATCH',T,'?id=eq.'+t.id,{done:$('#detail-done').checked}),$('#detail-done').checked?'整件事做完了！':'改回没做完');});
 $('#back').addEventListener('click',closeDetail);
+$('#moon-toggle').addEventListener('click',()=>{moonOpen=!moonOpen;renderMoon();});
 $('#toggle-done').addEventListener('click',()=>{showAllDone=!showAllDone;render();});
 $('#logout').addEventListener('click',()=>{if(confirm('退出登录？'))fetch(URL_BASE+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+(session&&session.access_token)}}).catch(()=>{}).finally(()=>{store(null);todos=[];openId=null;show();});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&session&&!editingId)refresh();});
