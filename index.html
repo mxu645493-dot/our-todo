@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="我们俩的待办">
 <meta name="theme-color" content="#f5f7fb">
+<meta name="app-version" content="20261112-3">
 <title>我们俩的待办</title>
 <link rel="apple-touch-icon" id="touch-icon" href="">
 <style>
@@ -436,6 +437,16 @@ const BEAR='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle 
 (function(){const svgUrl='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(BEAR);$('#logo').src=svgUrl;
  const img=new Image();img.onload=function(){const c=document.createElement('canvas');c.width=c.height=180;const g=c.getContext('2d');g.fillStyle='#fdf6ee';g.fillRect(0,0,180,180);g.drawImage(img,14,14,152,152);const png=c.toDataURL('image/png');$('#touch-icon').href=png;const fav=document.createElement('link');fav.rel='icon';fav.href=png;document.head.append(fav);};img.src=svgUrl;})();
 if(location.hash==='#item')history.replaceState(null,'',location.pathname);
+// 自动更新：打开或切回来时检查网上有没有新版本，有就换成新版本（换个网址绕开手机缓存）
+async function checkUpdate(){
+ try{
+  const r=await fetch(location.pathname+'?check='+Date.now(),{cache:'no-store'});const t=await r.text();
+  const m=t.match(/name="app-version" content="([^"]+)"/);const mine=document.querySelector('meta[name=app-version]').content;
+  if(m&&m[1]!==mine&&sessionStorage.getItem('updated-to')!==m[1]){sessionStorage.setItem('updated-to',m[1]);location.replace(location.pathname+'?v='+m[1]);}
+ }catch(_){}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate();});
+checkUpdate();
 session=load();show();
 </script>
 </body>
