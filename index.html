@@ -83,6 +83,34 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
 .moon-history{border-top:1px dashed #e6dcf5;margin-top:10px;padding-top:8px}
 .moon-row{display:flex;justify-content:space-between;align-items:center;font-size:.88rem;padding:4px 0}
 .moon-del{background:none;border:0;color:var(--red);padding:4px 6px;font-weight:500}
+.tabs{display:flex;gap:6px;margin:0 0 14px}
+.tab{flex:1;background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:12px;padding:10px}
+.tab.active{background:var(--pale);border-color:#c9d7f5;color:var(--blue)}
+.money-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.money-card.fund{border-color:#f1dce6;background:linear-gradient(180deg,#fff7fa,#fff 100px)}
+.money-title{font-size:1rem;margin:0 0 8px}
+.money-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.9rem}
+.money-arrow{background:#fff;border:1px solid var(--line);padding:4px 12px}
+.money-link{background:none;border:0;color:var(--blue);padding:4px}
+.money-form{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.money-form input{padding:9px 10px;flex:1 1 90px;min-width:0}
+.money-form input[type=date]{flex:0 1 150px}
+.money-amt{flex:0 1 100px!important}
+.money-label{font-size:.85rem;color:#53647a}
+.money-btn{background:var(--blue);color:#fff;padding:9px 14px}
+.money-big{font-size:1.5rem;font-weight:800;margin:6px 0 2px;color:var(--green)}
+.money-big.over{color:var(--red)}
+.money-big.fund-num{color:#b2457a}
+.money-meta{font-size:.78rem;color:var(--muted);margin:2px 0 8px}
+.money-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0f3f7;font-size:.9rem}
+.money-when{color:var(--muted);font-size:.8rem;flex-shrink:0}
+.money-what{flex:1;min-width:0;overflow-wrap:anywhere}
+.money-del{background:none;border:0;color:var(--red);padding:4px 6px;font-weight:500}
+.money-plus{color:var(--green)}
+.money-minus{color:var(--red)}
+.moon-toggle,#logout,.tab{white-space:nowrap}
+.money-label{flex-basis:100%}
+@media(max-width:430px){header{gap:8px}header img{width:38px;height:38px}header h1{font-size:1.1rem;white-space:nowrap}header p{font-size:.7rem}.moon-toggle{padding:6px 9px;font-size:.78rem}}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -90,6 +118,8 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
 <main>
  <header><img id="logo" alt=""><div><h1>我们俩的待办</h1><p>所爱隔山海，山海亦可平</p></div><span class="spacer"></span><button class="moon-toggle" id="moon-toggle" type="button" hidden aria-expanded="false">🌙 小月亮 <span id="moon-sign">＋</span></button><button class="link" id="logout" hidden>退出</button></header>
  <section class="panel moon-panel" id="moon" hidden></section>
+ <nav class="tabs" id="tabs" hidden><button type="button" class="tab active" data-tab="todo">📝 待办</button><button type="button" class="tab" data-tab="money">💄 省钱护肤</button></nav>
+ <section id="money" hidden></section>
  <section class="panel login" id="login" hidden>
   <h2>登录</h2>
   <p class="muted">用你们各自的邮箱和密码登录。账号由小熊在后台建好。</p>
@@ -133,7 +163,7 @@ const URL_BASE='https://cnupmfuxomfrmhbqojcf.supabase.co';
 const KEY='sb_publishable_err7Esvh43jYx7nlrPy1Gg_qSy4i-EV';
 const STORE='our-todo.session';
 const $=s=>document.querySelector(s);
-let moonRows=[],moonOpen=false;
+let moonRows=[],moonOpen=false,budgets=[],moneyRows=[],tab='todo',moneyView=null;
 let session=null,todos=[],lastJson='',showAllDone=false,editingId=null,openId=null,busy=false,toastTimer;
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;}
 function toast(t){clearTimeout(toastTimer);$('#toast').textContent=t;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,3000);}
@@ -200,12 +230,72 @@ function moonPanel(rows,ui){
  }
  return box;
 }
-const T='shared_todos',I='shared_todo_items',M='shared_moon';
+// 💄 省钱护肤：每周伙食预算，省下的钱进护肤小金库。手机网页和工作台共用（没有反引号和反斜杠）。
+function moneyFmt(c){const n=Math.abs(c)/100;return (c<0?'−':'')+'NZ$ '+n.toLocaleString('en-NZ',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function moneyParse(t){const s=String(t||'').replace(/[,， $]/g,'').replace(/^NZ/i,'');if(!/^[0-9]+([.][0-9]{1,2})?$/.test(s))return null;const c=Math.round(Number(s)*100);return c>0?c:null;}
+function moneyIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function moneyShift(d,n){const x=d.split('-').map(Number);return moneyIso(new Date(x[0],x[1]-1,x[2]+n));}
+function moneyWeek(d){const x=d.split('-').map(Number);const t=new Date(x[0],x[1]-1,x[2]);return moneyShift(d,-((t.getDay()+6)%7));}
+function moneyLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日';}
+function moneyStats(budgets,rows,view){
+ const today=moneyIso(new Date()),thisWeek=moneyWeek(today);
+ const bs=budgets.slice().sort((a,b)=>a.week_start.localeCompare(b.week_start));
+ const budgetFor=w=>{let b=null;for(const r of bs)if(r.week_start<=w)b=r.budget_cents;return b;};
+ const food=rows.filter(r=>r.kind==='food'),skin=rows.filter(r=>r.kind==='skincare');
+ const spentIn=w=>{const end=moneyShift(w,6);return food.filter(r=>r.spent_on>=w&&r.spent_on<=end).reduce((s,r)=>s+r.amount_cents,0);};
+ const weeks=[];if(bs.length){for(let w=bs[0].week_start;w<thisWeek;w=moneyShift(w,7)){const b=budgetFor(w),sp=spentIn(w);weeks.push({week:w,budget:b,spent:sp,saved:b-sp});}}
+ const savedTotal=weeks.reduce((s,w)=>s+w.saved,0),skinTotal=skin.reduce((s,r)=>s+r.amount_cents,0);
+ const vb=budgetFor(view),vs=spentIn(view),end=moneyShift(view,6);
+ const nowB=budgetFor(thisWeek),nowLeft=nowB===null?0:nowB-spentIn(thisWeek);
+ return {today,thisWeek,view,viewEnd:end,viewBudget:vb,viewSpent:vs,viewFood:food.filter(r=>r.spent_on>=view&&r.spent_on<=end).sort((a,b)=>b.spent_on.localeCompare(a.spent_on)||b.created_at.localeCompare(a.created_at)),weeks:weeks.slice().reverse(),savedTotal,skinTotal,fund:savedTotal-skinTotal,pending:nowLeft,skin:skin.slice().sort((a,b)=>b.spent_on.localeCompare(a.spent_on)||b.created_at.localeCompare(a.created_at)),hasBudget:bs.length>0};
+}
+function moneyPanel(budgets,rows,view,ui){
+ // ui: {el, btn, act, setView(week), upsertBudget(week,cents), insert(kind,date,title,cents), remove(id)}
+ const s=moneyStats(budgets,rows,view),el=ui.el,root=el('div','money');
+ const amountInput=ph=>{const i=el('input');i.inputMode='decimal';i.placeholder=ph;i.maxLength=12;i.className='money-amt';return i;};
+ // 一、本周伙食
+ const a=el('section','money-card');
+ const nav=el('div','money-nav');nav.append(ui.btn('‹',()=>ui.setView(moneyShift(view,-7)),'money-arrow'),el('strong','',moneyLabel(view)+' – '+moneyLabel(s.viewEnd)+(view===s.thisWeek?'（本周）':'')),ui.btn('›',()=>ui.setView(moneyShift(view,7)),'money-arrow'));
+ if(view!==s.thisWeek)nav.append(ui.btn('回到本周',()=>ui.setView(s.thisWeek),'money-link'));
+ a.append(el('h3','money-title','🍚 伙食预算'),nav);
+ const bf=el('form','money-form');const bi=amountInput(s.viewBudget===null?'每周预算，比如 150':String(s.viewBudget/100));
+ bf.append(el('span','money-label',s.viewBudget===null?'每周预算：':'这周预算 '+moneyFmt(s.viewBudget)+'，改成：'),bi,ui.btn(s.viewBudget===null?'设定':'改',()=>bf.requestSubmit(),'money-btn'));
+ bf.addEventListener('submit',e=>{e.preventDefault();const c=moneyParse(bi.value);if(c===null){bi.focus();return;}ui.act(()=>ui.upsertBudget(view,c),'预算已设好，之后每周都按这个，除非再改');});
+ a.append(bf);
+ if(s.viewBudget!==null){
+  const left=s.viewBudget-s.viewSpent,bar=el('progress');bar.max=s.viewBudget||1;bar.value=Math.min(s.viewSpent,s.viewBudget);a.append(bar);
+  a.append(el('p',left>=0?'money-big':'money-big over',left>=0?'还剩 '+moneyFmt(left):'超支 '+moneyFmt(-left)));
+  a.append(el('p','money-meta','已花 '+moneyFmt(s.viewSpent)+' / 预算 '+moneyFmt(s.viewBudget)+(view===s.thisWeek?' · 这周剩下的会在周日后存进护肤小金库':'')));
+ } else a.append(el('p','money-meta','先设一个每周伙食预算，省下来的钱就会存进护肤小金库。'));
+ const ff=el('form','money-form');const fd=el('input');fd.type='date';fd.value=(s.today>=view&&s.today<=s.viewEnd)?s.today:view;fd.min=view;fd.max=s.viewEnd;const ft=el('input');ft.placeholder='买了什么（可不填）';ft.maxLength=200;const fa=amountInput('金额');
+ ff.append(fd,ft,fa,ui.btn('记一笔',()=>ff.requestSubmit(),'money-btn'));
+ ff.addEventListener('submit',e=>{e.preventDefault();const c=moneyParse(fa.value);if(c===null){fa.focus();return;}ui.act(()=>ui.insert('food',fd.value,ft.value.trim(),c),'记下了');});
+ a.append(ff);
+ if(s.viewFood.length)s.viewFood.forEach(r=>{const row=el('div','money-row');row.append(el('span','money-when',moneyLabel(r.spent_on)),el('span','money-what',r.title||'伙食'),el('strong','',moneyFmt(r.amount_cents)),ui.btn('删',()=>{if(confirm('删除这笔 '+moneyFmt(r.amount_cents)+'？'))ui.act(()=>ui.remove(r.id),'已删除');},'money-del'));a.append(row);});
+ else a.append(el('p','money-meta','这周还没有记伙食开销。'));
+ root.append(a);
+ // 二、护肤小金库
+ const b=el('section','money-card fund');
+ b.append(el('h3','money-title','💄 护肤小金库'),el('p',s.fund>=0?'money-big fund-num':'money-big over',(s.fund>=0?'可以花 ':'透支 ')+moneyFmt(Math.abs(s.fund))));
+ b.append(el('p','money-meta','往周一共省下 '+moneyFmt(s.savedTotal)+' − 已买护肤品 '+moneyFmt(s.skinTotal)+(s.pending>0?' · 这周保持住，周日后还会再存进 '+moneyFmt(s.pending):'')));
+ const sf=el('form','money-form');const sd=el('input');sd.type='date';sd.value=s.today;const st=el('input');st.placeholder='买了什么护肤品';st.maxLength=200;const sa=amountInput('金额');
+ sf.append(sd,st,sa,ui.btn('用小金库买',()=>sf.requestSubmit(),'money-btn'));
+ sf.addEventListener('submit',e=>{e.preventDefault();const c=moneyParse(sa.value);if(c===null){sa.focus();return;}ui.act(()=>ui.insert('skincare',sd.value,st.value.trim(),c),'买到啦，已从小金库扣掉');});
+ b.append(sf);
+ s.skin.slice(0,8).forEach(r=>{const row=el('div','money-row');row.append(el('span','money-when',moneyLabel(r.spent_on)),el('span','money-what',r.title||'护肤品'),el('strong','',moneyFmt(r.amount_cents)),ui.btn('删',()=>{if(confirm('删除这笔 '+moneyFmt(r.amount_cents)+'？'))ui.act(()=>ui.remove(r.id),'已删除');},'money-del'));b.append(row);});
+ root.append(b);
+ // 三、往周记录
+ if(s.weeks.length){const c=el('section','money-card');c.append(el('h3','money-title','📅 往周省了多少'));
+  s.weeks.slice(0,10).forEach(w=>{const row=el('div','money-row');row.append(el('span','money-what',moneyLabel(w.week)+' – '+moneyLabel(moneyShift(w.week,6))),el('span','money-when','花了 '+moneyFmt(w.spent)+' / '+moneyFmt(w.budget)),el('strong',w.saved>=0?'money-plus':'money-minus',(w.saved>=0?'+':'')+moneyFmt(w.saved)));c.append(row);});
+  root.append(c);}
+ return root;
+}
+const T='shared_todos',I='shared_todo_items',M='shared_moon',B='shared_food_budget',$M='shared_money';
 function who(email){return !email?'':email===session.email?'我':'TA';}
 function day(ts){if(!ts)return '';const d=new Date(ts);const t=new Date();const y=new Date(Date.now()-864e5);const k=x=>x.toDateString();return k(d)===k(t)?'今天':k(d)===k(y)?'昨天':(d.getMonth()+1)+'月'+d.getDate()+'日';}
 function itemsOf(t){const all=t.shared_todo_items||[];return all.filter(x=>!all.some(y=>y.parent_id===x.id));}
 async function refresh(){
- try{const data=await api('GET',T,'?select=*,shared_todo_items(*)&order=created_at.asc');let moon=moonRows;try{moon=await api('GET',M,'?select=*&order=start_date.asc');}catch(_){}const json=JSON.stringify([data,moon]);if(json!==lastJson){lastJson=json;todos=data;moonRows=moon;render();}$('#sync').textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
+ try{const data=await api('GET',T,'?select=*,shared_todo_items(*)&order=created_at.asc');let moon=moonRows;try{moon=await api('GET',M,'?select=*&order=start_date.asc');}catch(_){}let bud=budgets,mon=moneyRows;try{bud=await api('GET',B,'?select=*&order=week_start.asc');mon=await api('GET',$M,'?select=*&order=spent_on.asc');}catch(_){}const json=JSON.stringify([data,moon,bud,mon]);if(json!==lastJson){lastJson=json;todos=data;moonRows=moon;budgets=bud;moneyRows=mon;render();}$('#sync').textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
  catch(e){$('#sync').textContent=e.message;}
 }
 async function act(fn,msg){if(busy)return;busy=true;try{await fn();await refresh();if(msg)toast(msg);}catch(e){toast(e.message);await refresh();}finally{busy=false;}}
@@ -287,9 +377,17 @@ function renderMoon(){
  const head=el('div','head');head.append(el('h2','','🌙 小月亮'),el('span','muted','只有我们俩能看到'));
  $('#moon').replaceChildren(head,moonPanel(moonRows,{el,btn,act,insert:d=>api('POST',M,'',{start_date:d}),update:(id,patch)=>api('PATCH',M,'?id=eq.'+id,patch),remove:id=>api('DELETE',M,'?id=eq.'+id)}));
 }
+function renderMoney(){
+ if(!moneyView)moneyView=moneyWeek(moneyIso(new Date()));
+ const btn=(t,fn,cls)=>{const b=el('button',cls,t);b.type='button';b.addEventListener('click',fn);return b;};
+ $('#money').replaceChildren(moneyPanel(budgets,moneyRows,moneyView,{el,btn,act,setView:w=>{moneyView=w;renderMoney();},upsertBudget:async(w,c)=>{const r=await api('PATCH',B,'?week_start=eq.'+w,{budget_cents:c});if(!r||!r.length)await api('POST',B,'',{week_start:w,budget_cents:c});},insert:(k,d,t,c)=>api('POST',$M,'',{kind:k,spent_on:d,title:t,amount_cents:c}),remove:id=>api('DELETE',$M,'?id=eq.'+id)}));
+}
 function render(){
  if(!session)return;
  renderMoon();
+ document.querySelectorAll('#tabs .tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+ if(tab==='money'){$('#app').hidden=true;$('#detail').hidden=true;$('#money').hidden=false;return renderMoney();}
+ $('#money').hidden=true;
  const current=openId&&todos.find(t=>t.id===openId);
  if(openId&&!current){openId=null;if(location.hash==='#item')history.replaceState(null,'',location.pathname);}
  if(current)return renderDetail(current);
@@ -303,7 +401,7 @@ function render(){
  $('#toggle-done').textContent=done.length>recent.length?(showAllDone?'只看最近 7 天':'显示全部 '+done.length+' 项'):'';
 }
 function show(){
- const ok=!!session;$('#login').hidden=ok;$('#app').hidden=!ok;$('#detail').hidden=true;$('#logout').hidden=!ok;$('#moon-toggle').hidden=!ok;if(!ok)$('#moon').hidden=true;
+ const ok=!!session;$('#login').hidden=ok;$('#app').hidden=!ok;$('#detail').hidden=true;$('#logout').hidden=!ok;$('#moon-toggle').hidden=!ok;$('#tabs').hidden=!ok;if(!ok){$('#moon').hidden=true;$('#money').hidden=true;}
  if(ok){lastJson='';refresh();}
 }
 $('#login-form').addEventListener('submit',async e=>{
@@ -322,6 +420,7 @@ $('#item-form').addEventListener('submit',e=>{
 $('#detail-done').addEventListener('change',()=>{const t=todos.find(x=>x.id===openId);if(t)act(()=>api('PATCH',T,'?id=eq.'+t.id,{done:$('#detail-done').checked}),$('#detail-done').checked?'整件事做完了！':'改回没做完');});
 $('#back').addEventListener('click',closeDetail);
 $('#moon-toggle').addEventListener('click',()=>{moonOpen=!moonOpen;renderMoon();});
+document.querySelectorAll('#tabs .tab').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.tab;if(tab==='money'&&openId)closeDetail();render();window.scrollTo(0,0);}));
 $('#toggle-done').addEventListener('click',()=>{showAllDone=!showAllDone;render();});
 $('#logout').addEventListener('click',()=>{if(confirm('退出登录？'))fetch(URL_BASE+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+(session&&session.access_token)}}).catch(()=>{}).finally(()=>{store(null);todos=[];openId=null;show();});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&session&&!editingId)refresh();});
