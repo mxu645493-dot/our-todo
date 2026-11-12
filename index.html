@@ -194,7 +194,7 @@ async function api(method,table,query,body){
 function moonDays(a,b){const p=s=>{const x=s.split('-').map(Number);return Date.UTC(x[0],x[1]-1,x[2]);};return Math.round((p(b)-p(a))/864e5);}
 function moonAdd(d,n){const x=d.split('-').map(Number);const t=new Date(Date.UTC(x[0],x[1]-1,x[2]+n));return t.toISOString().slice(0,10);}
 function moonToday(){const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');}
-function moonLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日';}
+function moonLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日 周'+'日一二三四五六'[new Date(x[0],x[1]-1,x[2]).getDay()];}
 function moonStats(rows){
  const list=rows.slice().sort((a,b)=>a.start_date.localeCompare(b.start_date));
  const gaps=[];for(let i=1;i<list.length;i++){const g=moonDays(list[i-1].start_date,list[i].start_date);if(g>=15&&g<=60)gaps.push(g);}
