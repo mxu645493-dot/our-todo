@@ -236,7 +236,7 @@ function moneyParse(t){const s=String(t||'').replace(/[,， $]/g,'').replace(/^N
 function moneyIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function moneyShift(d,n){const x=d.split('-').map(Number);return moneyIso(new Date(x[0],x[1]-1,x[2]+n));}
 function moneyWeek(d){const x=d.split('-').map(Number);const t=new Date(x[0],x[1]-1,x[2]);return moneyShift(d,-((t.getDay()+6)%7));}
-function moneyLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日';}
+function moneyLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日 周'+'日一二三四五六'[new Date(x[0],x[1]-1,x[2]).getDay()];}
 function moneyStats(budgets,rows,view){
  const today=moneyIso(new Date()),thisWeek=moneyWeek(today);
  const bs=budgets.slice().sort((a,b)=>a.week_start.localeCompare(b.week_start));
