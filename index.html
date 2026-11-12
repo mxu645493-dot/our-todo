@@ -111,6 +111,7 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transpare
 .moon-toggle,#logout,.tab{white-space:nowrap}
 .money-label{flex-basis:100%}
 @media(max-width:430px){header{gap:8px}header img{width:38px;height:38px}header h1{font-size:1.1rem;white-space:nowrap}header p{font-size:.7rem}.moon-toggle{padding:6px 9px;font-size:.78rem}}
+.money-dow,.moon-dow{font-size:.85rem;font-weight:700;color:#6b46b8;min-width:2.6em}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -195,6 +196,7 @@ function moonDays(a,b){const p=s=>{const x=s.split('-').map(Number);return Date.
 function moonAdd(d,n){const x=d.split('-').map(Number);const t=new Date(Date.UTC(x[0],x[1]-1,x[2]+n));return t.toISOString().slice(0,10);}
 function moonToday(){const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');}
 function moonLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日 周'+'日一二三四五六'[new Date(x[0],x[1]-1,x[2]).getDay()];}
+function moneyDowM(d){if(!d)return '';const x=d.split('-').map(Number);return '周'+'日一二三四五六'[new Date(x[0],x[1]-1,x[2]).getDay()];}
 function moonStats(rows){
  const list=rows.slice().sort((a,b)=>a.start_date.localeCompare(b.start_date));
  const gaps=[];for(let i=1;i<list.length;i++){const g=moonDays(list[i-1].start_date,list[i].start_date);if(g>=15&&g<=60)gaps.push(g);}
@@ -216,12 +218,14 @@ function moonPanel(rows,ui){
   box.append(el('p','moon-meta','平均间隔 '+s.cycle+' 天'+(s.basedOn?'（按最近 '+s.basedOn+' 次算）':'（记录还少，先按 28 天估计）')+' · 平均持续 '+s.len+' 天'));
   if(ongoing){
    const f=el('form','moon-form');const d=el('input');d.type='date';d.value=s.today;d.min=s.last.start_date;d.setAttribute('aria-label','结束日期');
-   f.append(el('span','moon-label','这次结束：'),d,ui.btn('记录结束',()=>f.requestSubmit(),'moon-btn'));
+   const dw=el('span','moon-dow',moneyDowM(d.value));d.addEventListener('input',()=>{dw.textContent=moneyDowM(d.value);});
+   f.append(el('span','moon-label','这次结束：'),d,dw,ui.btn('记录结束',()=>f.requestSubmit(),'moon-btn'));
    f.addEventListener('submit',e=>{e.preventDefault();if(!d.value)return;ui.act(()=>ui.update(s.last.id,{end_date:d.value}),'记好了');});box.append(f);
   }
  }
  const f=el('form','moon-form');const d=el('input');d.type='date';d.value=s.today;d.setAttribute('aria-label','开始日期');
- f.append(el('span','moon-label','这次开始：'),d,ui.btn('记录开始',()=>f.requestSubmit(),'moon-btn'));
+ const dw=el('span','moon-dow',moneyDowM(d.value));d.addEventListener('input',()=>{dw.textContent=moneyDowM(d.value);});
+ f.append(el('span','moon-label','这次开始：'),d,dw,ui.btn('记录开始',()=>f.requestSubmit(),'moon-btn'));
  f.addEventListener('submit',e=>{e.preventDefault();if(!d.value)return;if(s.list.some(r=>r.start_date===d.value))return ui.act(async()=>{throw new Error('这一天已经记过了');});ui.act(()=>ui.insert(d.value),'记好了');});box.append(f);
  if(s.list.length){
   const h=el('div','moon-history');h.append(el('p','moon-meta','最近的记录'));
@@ -236,6 +240,7 @@ function moneyParse(t){const s=String(t||'').replace(/[,， $]/g,'').replace(/^N
 function moneyIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function moneyShift(d,n){const x=d.split('-').map(Number);return moneyIso(new Date(x[0],x[1]-1,x[2]+n));}
 function moneyWeek(d){const x=d.split('-').map(Number);const t=new Date(x[0],x[1]-1,x[2]);return moneyShift(d,-((t.getDay()+6)%7));}
+function moneyDow(d){if(!d)return '';const x=d.split('-').map(Number);return '周'+'日一二三四五六'[new Date(x[0],x[1]-1,x[2]).getDay()];}
 function moneyLabel(d){const x=d.split('-').map(Number);return x[1]+'月'+x[2]+'日 周'+'日一二三四五六'[new Date(x[0],x[1]-1,x[2]).getDay()];}
 function moneyStats(budgets,rows,view){
  const today=moneyIso(new Date()),thisWeek=moneyWeek(today);
@@ -268,7 +273,8 @@ function moneyPanel(budgets,rows,view,ui){
   a.append(el('p','money-meta','已花 '+moneyFmt(s.viewSpent)+' / 预算 '+moneyFmt(s.viewBudget)+(view===s.thisWeek?' · 这周剩下的会在周日后存进护肤小金库':'')));
  } else a.append(el('p','money-meta','先设一个每周伙食预算，省下来的钱就会存进护肤小金库。'));
  const ff=el('form','money-form');const fd=el('input');fd.type='date';fd.value=(s.today>=view&&s.today<=s.viewEnd)?s.today:view;fd.min=view;fd.max=s.viewEnd;const ft=el('input');ft.placeholder='买了什么（可不填）';ft.maxLength=200;const fa=amountInput('金额');
- ff.append(fd,ft,fa,ui.btn('记一笔',()=>ff.requestSubmit(),'money-btn'));
+ const fw=el('span','money-dow',moneyDow(fd.value));fd.addEventListener('input',()=>{fw.textContent=moneyDow(fd.value);});
+ ff.append(fd,fw,ft,fa,ui.btn('记一笔',()=>ff.requestSubmit(),'money-btn'));
  ff.addEventListener('submit',e=>{e.preventDefault();const c=moneyParse(fa.value);if(c===null){fa.focus();return;}ui.act(()=>ui.insert('food',fd.value,ft.value.trim(),c),'记下了');});
  a.append(ff);
  if(s.viewFood.length)s.viewFood.forEach(r=>{const row=el('div','money-row');row.append(el('span','money-when',moneyLabel(r.spent_on)),el('span','money-what',r.title||'伙食'),el('strong','',moneyFmt(r.amount_cents)),ui.btn('删',()=>{if(confirm('删除这笔 '+moneyFmt(r.amount_cents)+'？'))ui.act(()=>ui.remove(r.id),'已删除');},'money-del'));a.append(row);});
@@ -279,7 +285,8 @@ function moneyPanel(budgets,rows,view,ui){
  b.append(el('h3','money-title','💄 护肤小金库'),el('p',s.fund>=0?'money-big fund-num':'money-big over',(s.fund>=0?'可以花 ':'透支 ')+moneyFmt(Math.abs(s.fund))));
  b.append(el('p','money-meta','往周一共省下 '+moneyFmt(s.savedTotal)+' − 已买护肤品 '+moneyFmt(s.skinTotal)+(s.pending>0?' · 这周保持住，周日后还会再存进 '+moneyFmt(s.pending):'')));
  const sf=el('form','money-form');const sd=el('input');sd.type='date';sd.value=s.today;const st=el('input');st.placeholder='买了什么护肤品';st.maxLength=200;const sa=amountInput('金额');
- sf.append(sd,st,sa,ui.btn('用小金库买',()=>sf.requestSubmit(),'money-btn'));
+ const sw=el('span','money-dow',moneyDow(sd.value));sd.addEventListener('input',()=>{sw.textContent=moneyDow(sd.value);});
+ sf.append(sd,sw,st,sa,ui.btn('用小金库买',()=>sf.requestSubmit(),'money-btn'));
  sf.addEventListener('submit',e=>{e.preventDefault();const c=moneyParse(sa.value);if(c===null){sa.focus();return;}ui.act(()=>ui.insert('skincare',sd.value,st.value.trim(),c),'买到啦，已从小金库扣掉');});
  b.append(sf);
  s.skin.slice(0,8).forEach(r=>{const row=el('div','money-row');row.append(el('span','money-when',moneyLabel(r.spent_on)),el('span','money-what',r.title||'护肤品'),el('strong','',moneyFmt(r.amount_cents)),ui.btn('删',()=>{if(confirm('删除这笔 '+moneyFmt(r.amount_cents)+'？'))ui.act(()=>ui.remove(r.id),'已删除');},'money-del'));b.append(row);});
